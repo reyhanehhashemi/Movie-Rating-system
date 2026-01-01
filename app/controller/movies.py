@@ -1,3 +1,4 @@
+# app/controller/movies.py
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, status
@@ -5,6 +6,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.logging_config import logger
 from app.db.deps import get_db
 from app.schemas.movies import (
     MovieListPage,
@@ -70,26 +72,58 @@ def list_movies(
     - title: جست‌وجوی جزئی در عنوان
     - release_year: سال انتشار
     - genre: نام ژانر (مثلاً Action)
-
-    خروجی مطابق داک:
-
-    {
-      "status": "success",
-      "data": {
-        "page": ...,
-        "page_size": ...,
-        "total_items": ...,
-        "items": [ ... ]
-      }
-    }
     """
-    page_data: MovieListPage = list_movies_service(
-        db=db,
-        page=page,
-        page_size=page_size,
-        title=title,
-        release_year=release_year,
-        genre=genre,
+    route_path = "/api/v1/movies/"
+
+    # شروع عملیات
+    logger.info(
+        "Listing movies",
+        extra={
+            "route": route_path,
+            "page": page,
+            "page_size": page_size,
+            "title": title,
+            "release_year": release_year,
+            "genre": genre,
+        },
+    )
+
+    try:
+        page_data: MovieListPage = list_movies_service(
+            db=db,
+            page=page,
+            page_size=page_size,
+            title=title,
+            release_year=release_year,
+            genre=genre,
+        )
+    except Exception:
+        logger.error(
+            "Failed to list movies",
+            extra={
+                "route": route_path,
+                "page": page,
+                "page_size": page_size,
+                "title": title,
+                "release_year": release_year,
+                "genre": genre,
+            },
+            exc_info=True,
+        )
+        return error_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal server error",
+        )
+
+    logger.info(
+        "Movies listed successfully",
+        extra={
+            "route": route_path,
+            "page": page,
+            "page_size": page_size,
+            "total_items": page_data.total_items,
+            "pages": page_data.pages,
+        },
     )
 
     return SuccessMovieListResponse(
@@ -136,14 +170,9 @@ def create_movie(
 ):
     """
     ایجاد فیلم جدید به همراه ژانرها.
-
-    - در صورت موفقیت: 201 + status=success + داده‌ی فیلم
-      (average_rating = null, ratings_count = 0)
-    - در صورت director_id یا genres نامعتبر: 422 با status=failure
     """
     try:
         movie_db = create_movie_service(db=db, movie_in=movie_in)
-        # movie_db شامل director و genres است
         movie_detail = MovieDetail(
             id=movie_db.id,
             title=movie_db.title,
@@ -177,10 +206,6 @@ def update_movie(
 ):
     """
     به‌روزرسانی اطلاعات فیلم.
-
-    - در صورت موفقیت: status=success + داده‌ی به‌روزشده
-    - در صورت نبودن فیلم: 404
-    - در صورت director_id / genres نامعتبر (FK): 422
     """
     try:
         movie_detail = update_movie_service(db=db, movie_id=movie_id, movie_in=movie_in)
@@ -213,9 +238,6 @@ def delete_movie(
 ):
     """
     حذف فیلم.
-
-    - در صورت موفقیت: 204 No Content (بدون بدنه)
-    - در صورت نبودن فیلم: 404 با status=failure
     """
     ok = delete_movie_service(db=db, movie_id=movie_id)
     if not ok:
@@ -223,7 +245,6 @@ def delete_movie(
             status_code=status.HTTP_404_NOT_FOUND,
             message="Movie not found",
         )
-    # موفقیت: بدون بدنه
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -243,13 +264,49 @@ def add_rating(
     - در صورت موفقیت: 201 + status=success + داده‌ی rating
     - در صورت نبودن فیلم: 404 با status=failure
     """
-    rating = add_movie_rating_service(
-        db=db,
-        movie_id=movie_id,
-        score=rating_in.score,
+    route_path = f"/api/v1/movies/{movie_id}/ratings"
+
+    # شروع عملیات rating
+    logger.info(
+        "Rating movie",
+        extra={
+            "route": route_path,
+            "movie_id": movie_id,
+            "rating": rating_in.score,
+        },
     )
+
+    try:
+        rating = add_movie_rating_service(
+            db=db,
+            movie_id=movie_id,
+            score=rating_in.score,
+        )
+    except Exception:
+        logger.error(
+            "Failed to save rating",
+            extra={
+                "route": route_path,
+                "movie_id": movie_id,
+                "rating": rating_in.score,
+            },
+            exc_info=True,
+        )
+        return error_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal server error",
+        )
+
     if not rating:
         # یعنی فیلمی با این id وجود ندارد
+        logger.warning(
+            "Movie not found for rating",
+            extra={
+                "route": route_path,
+                "movie_id": movie_id,
+                "rating": rating_in.score,
+            },
+        )
         return error_response(
             status_code=status.HTTP_404_NOT_FOUND,
             message="Movie not found",
@@ -260,6 +317,16 @@ def add_rating(
         movie_id=rating.movie_id,
         score=rating.score,
         created_at=rating.created_at.isoformat(),
+    )
+
+    logger.info(
+        "Rating saved successfully",
+        extra={
+            "route": route_path,
+            "movie_id": rating.movie_id,
+            "rating": rating.score,
+            "rating_id": rating.id,
+        },
     )
 
     return SuccessRatingResponse(
