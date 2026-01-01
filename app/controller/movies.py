@@ -1,5 +1,6 @@
 # app/controller/movies.py
 from typing import Optional
+from app.core.decorators import log_endpoint
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse, Response
@@ -53,12 +54,11 @@ def error_response(status_code: int, message: str) -> JSONResponse:
             },
         },
     )
-
-
 @router.get(
     "/",
     response_model=SuccessMovieListResponse,
 )
+@log_endpoint("list_movies")
 def list_movies(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -67,6 +67,8 @@ def list_movies(
     genre: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
+
+
     """
     لیست فیلم‌ها با pagination و فیلترها:
     - title: جست‌وجوی جزئی در عنوان
@@ -253,10 +255,11 @@ def delete_movie(
     response_model=SuccessRatingResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@log_endpoint("add_rating")
 def add_rating(
-    movie_id: int,
-    rating_in: MovieRatingCreate,
-    db: Session = Depends(get_db),
+        movie_id: int,
+        rating_in: MovieRatingCreate,
+        db: Session = Depends(get_db),
 ):
     """
     ثبت امتیاز برای فیلم (۱ تا ۱۰).
