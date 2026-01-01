@@ -17,3 +17,5 @@ env/
 
 # Alembic cache
 alembic/__pycache__/
+# Environment
+.env
