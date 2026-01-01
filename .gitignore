@@ -19,3 +19,5 @@ env/
 alembic/__pycache__/
 # Environment
 .env
+__pycache__/
+*.pyc
