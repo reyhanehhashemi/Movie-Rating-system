@@ -1,12 +1,19 @@
 # app/core/logging_config.py
 import logging
 
-LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+# اسم logger اصلی سرویس
+LOGGER_NAME = "movie_rating"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format=LOG_FORMAT,
-)
+logger = logging.getLogger(LOGGER_NAME)
+logger.setLevel(logging.INFO)
 
-# logger اصلی سرویس
-logger = logging.getLogger("movie_rating")
+# جلوی اضافه شدن چندباره‌ی handler را می‌گیریم
+if not logger.handlers:
+    handler = logging.StreamHandler()  # خروجی روی stdout (لاگ‌های Uvicorn/Docker)
+
+    formatter = logging.Formatter(
+        fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+
+    logger.addHandler(handler)

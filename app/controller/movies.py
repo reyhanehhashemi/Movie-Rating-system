@@ -1,12 +1,12 @@
 # app/controller/movies.py
 from typing import Optional
-from app.core.decorators import log_endpoint
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.decorators import log_endpoint
 from app.core.logging_config import logger
 from app.db.deps import get_db
 from app.schemas.movies import (
@@ -34,8 +34,7 @@ router = APIRouter(prefix="/api/v1/movies", tags=["movies"])
 
 def error_response(status_code: int, message: str) -> JSONResponse:
     """
-    ساخت پاسخ خطا مطابق داک:
-
+    پاسخ خطا مطابق داک:
     {
       "status": "failure",
       "error": {
@@ -54,6 +53,11 @@ def error_response(status_code: int, message: str) -> JSONResponse:
             },
         },
     )
+
+
+# -------------------------
+# LIST MOVIES
+# -------------------------
 @router.get(
     "/",
     response_model=SuccessMovieListResponse,
@@ -67,27 +71,21 @@ def list_movies(
     genre: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-
-
     """
-    لیست فیلم‌ها با pagination و فیلترها:
-    - title: جست‌وجوی جزئی در عنوان
-    - release_year: سال انتشار
-    - genre: نام ژانر (مثلاً Action)
+    لیست فیلم‌ها با pagination و فیلترها.
     """
     route_path = "/api/v1/movies/"
 
-    # شروع عملیات
+    # شروع عملیات: context کامل
     logger.info(
-        "Listing movies",
-        extra={
-            "route": route_path,
-            "page": page,
-            "page_size": page_size,
-            "title": title,
-            "release_year": release_year,
-            "genre": genre,
-        },
+        "Listing movies (page=%s, page_size=%s, title=%s, release_year=%s, "
+        "genre=%s, route=%s)",
+        page,
+        page_size,
+        title,
+        release_year,
+        genre,
+        route_path,
     )
 
     try:
@@ -101,15 +99,14 @@ def list_movies(
         )
     except Exception:
         logger.error(
-            "Failed to list movies",
-            extra={
-                "route": route_path,
-                "page": page,
-                "page_size": page_size,
-                "title": title,
-                "release_year": release_year,
-                "genre": genre,
-            },
+            "Failed to list movies (page=%s, page_size=%s, title=%s, "
+            "release_year=%s, genre=%s, route=%s)",
+            page,
+            page_size,
+            title,
+            release_year,
+            genre,
+            route_path,
             exc_info=True,
         )
         return error_response(
@@ -118,14 +115,13 @@ def list_movies(
         )
 
     logger.info(
-        "Movies listed successfully",
-        extra={
-            "route": route_path,
-            "page": page,
-            "page_size": page_size,
-            "total_items": page_data.total_items,
-            "pages": page_data.pages,
-        },
+        "Movies listed successfully (page=%s, page_size=%s, total_items=%s, "
+        "pages=%s, route=%s)",
+        page,
+        page_size,
+        page_data.total_items,
+        page_data.pages,
+        route_path,
     )
 
     return SuccessMovieListResponse(
@@ -134,6 +130,9 @@ def list_movies(
     )
 
 
+# -------------------------
+# GET MOVIE DETAIL
+# -------------------------
 @router.get(
     "/{movie_id}",
     response_model=SuccessMovieDetailResponse,
@@ -144,16 +143,16 @@ def get_movie(
 ):
     """
     مشاهده‌ی جزئیات یک فیلم.
-
-    - در صورت موفقیت: status=success + data (MovieDetail)
-    - در صورت عدم وجود فیلم: 404 با status=failure
     """
     movie: Optional[MovieDetail] = get_movie_detail_service(db=db, movie_id=movie_id)
     if not movie:
+        logger.warning("Movie not found (movie_id=%s, route=%s)", movie_id, "/api/v1/movies/{movie_id}")
         return error_response(
             status_code=status.HTTP_404_NOT_FOUND,
             message="Movie not found",
         )
+
+    logger.info("Movie detail fetched (movie_id=%s)", movie_id)
 
     return SuccessMovieDetailResponse(
         status="success",
@@ -161,6 +160,9 @@ def get_movie(
     )
 
 
+# -------------------------
+# CREATE MOVIE
+# -------------------------
 @router.post(
     "/",
     response_model=SuccessMovieDetailResponse,
@@ -175,28 +177,43 @@ def create_movie(
     """
     try:
         movie_db = create_movie_service(db=db, movie_in=movie_in)
-        movie_detail = MovieDetail(
-            id=movie_db.id,
-            title=movie_db.title,
-            release_year=movie_db.release_year,
-            cast=movie_db.cast,
-            director=movie_db.director,
-            genres=[g.name for g in movie_db.genres],
-            average_rating=None,
-            ratings_count=0,
-        )
-        return SuccessMovieDetailResponse(
-            status="success",
-            data=movie_detail,
-        )
     except IntegrityError:
         db.rollback()
+        logger.error(
+            "Failed to create movie due to invalid director/genres "
+            "(title=%s, director_id=%s, genre_ids=%s)",
+            movie_in.title,
+            movie_in.director_id,
+            movie_in.genre_ids,
+            exc_info=True,
+        )
         return error_response(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             message="Invalid director_id or genres",
         )
 
+    movie_detail = MovieDetail(
+        id=movie_db.id,
+        title=movie_db.title,
+        release_year=movie_db.release_year,
+        cast=movie_db.cast,
+        director=movie_db.director,
+        genres=[g.name for g in movie_db.genres],
+        average_rating=None,
+        ratings_count=0,
+    )
 
+    logger.info("Movie created successfully (movie_id=%s, title=%s)", movie_db.id, movie_db.title)
+
+    return SuccessMovieDetailResponse(
+        status="success",
+        data=movie_detail,
+    )
+
+
+# -------------------------
+# UPDATE MOVIE
+# -------------------------
 @router.put(
     "/{movie_id}",
     response_model=SuccessMovieDetailResponse,
@@ -213,16 +230,27 @@ def update_movie(
         movie_detail = update_movie_service(db=db, movie_id=movie_id, movie_in=movie_in)
     except IntegrityError:
         db.rollback()
+        logger.error(
+            "Failed to update movie due to invalid director/genres "
+            "(movie_id=%s, director_id=%s, genre_ids=%s)",
+            movie_id,
+            movie_in.director_id,
+            movie_in.genre_ids,
+            exc_info=True,
+        )
         return error_response(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             message="Invalid director_id or genres",
         )
 
     if not movie_detail:
+        logger.warning("Movie not found for update (movie_id=%s)", movie_id)
         return error_response(
             status_code=status.HTTP_404_NOT_FOUND,
             message="Movie not found",
         )
+
+    logger.info("Movie updated successfully (movie_id=%s)", movie_id)
 
     return SuccessMovieDetailResponse(
         status="success",
@@ -230,6 +258,9 @@ def update_movie(
     )
 
 
+# -------------------------
+# DELETE MOVIE
+# -------------------------
 @router.delete(
     "/{movie_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -243,13 +274,19 @@ def delete_movie(
     """
     ok = delete_movie_service(db=db, movie_id=movie_id)
     if not ok:
+        logger.warning("Movie not found for delete (movie_id=%s)", movie_id)
         return error_response(
             status_code=status.HTTP_404_NOT_FOUND,
             message="Movie not found",
         )
+
+    logger.info("Movie deleted successfully (movie_id=%s)", movie_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+# -------------------------
+# ADD RATING
+# -------------------------
 @router.post(
     "/{movie_id}/ratings",
     response_model=SuccessRatingResponse,
@@ -257,26 +294,21 @@ def delete_movie(
 )
 @log_endpoint("add_rating")
 def add_rating(
-        movie_id: int,
-        rating_in: MovieRatingCreate,
-        db: Session = Depends(get_db),
+    movie_id: int,
+    rating_in: MovieRatingCreate,
+    db: Session = Depends(get_db),
 ):
     """
     ثبت امتیاز برای فیلم (۱ تا ۱۰).
-
-    - در صورت موفقیت: 201 + status=success + داده‌ی rating
-    - در صورت نبودن فیلم: 404 با status=failure
     """
     route_path = f"/api/v1/movies/{movie_id}/ratings"
 
-    # شروع عملیات rating
+    # شروع عملیات rating با context کامل
     logger.info(
-        "Rating movie",
-        extra={
-            "route": route_path,
-            "movie_id": movie_id,
-            "rating": rating_in.score,
-        },
+        "Rating movie (movie_id=%s, rating=%s, route=%s)",
+        movie_id,
+        rating_in.score,
+        route_path,
     )
 
     try:
@@ -287,12 +319,10 @@ def add_rating(
         )
     except Exception:
         logger.error(
-            "Failed to save rating",
-            extra={
-                "route": route_path,
-                "movie_id": movie_id,
-                "rating": rating_in.score,
-            },
+            "Failed to save rating (movie_id=%s, rating=%s, route=%s)",
+            movie_id,
+            rating_in.score,
+            route_path,
             exc_info=True,
         )
         return error_response(
@@ -303,12 +333,10 @@ def add_rating(
     if not rating:
         # یعنی فیلمی با این id وجود ندارد
         logger.warning(
-            "Movie not found for rating",
-            extra={
-                "route": route_path,
-                "movie_id": movie_id,
-                "rating": rating_in.score,
-            },
+            "Movie not found for rating (movie_id=%s, rating=%s, route=%s)",
+            movie_id,
+            rating_in.score,
+            route_path,
         )
         return error_response(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -323,13 +351,9 @@ def add_rating(
     )
 
     logger.info(
-        "Rating saved successfully",
-        extra={
-            "route": route_path,
-            "movie_id": rating.movie_id,
-            "rating": rating.score,
-            "rating_id": rating.id,
-        },
+        "Rating saved successfully (movie_id=%s, rating=%s)",
+        rating.movie_id,
+        rating.score,
     )
 
     return SuccessRatingResponse(
