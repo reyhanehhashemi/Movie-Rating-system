@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:16
+    container_name: movie-rating-system-db
+    environment:
+      POSTGRES_DB: moviedb
+      POSTGRES_USER: movie_user
+      POSTGRES_PASSWORD: movie_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - movie_rating_pgdata:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: movie-rating-system-app
+    depends_on:
+      - db
+    environment:
+      # این خط خیلی مهمه 👇
+      DATABASE_URL: postgresql://movie_user:movie_password@db:5432/moviedb
+    ports:
+      - "8000:8000"
+
+volumes:
+  movie_rating_pgdata:
