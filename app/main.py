@@ -1,8 +1,11 @@
+# app/main.py
 from fastapi import FastAPI
 
 from app.controller.movies import router as movies_router
 from app.exceptions.app_exceptions import AppException
 from app.exceptions.handlers import app_exception_handler
+from app.core.logging_config import logger as app_logger  # فقط برای اعمال تنظیمات logging
+
 
 app = FastAPI(
     title="Movie Rating System",
